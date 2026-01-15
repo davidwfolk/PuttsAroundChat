@@ -18,16 +18,18 @@
             background-color: #0f172a; /* Slate-900 */
             color: white;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            overflow: hidden; /* Prevent full page scroll */
+            /* Allow main page scrolling */
+            overflow-y: auto; 
+            overflow-x: hidden;
         }
 
-        /* Scrollbar Styling for internal elements */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
 
-        /* Widget Container (The wrapper around each modal) */
+        /* Widget Container */
         .widget-wrapper {
             flex: 1; /* Default: Auto-grow */
             min-height: 100px; /* Minimum size prevention */
@@ -129,7 +131,7 @@
         .drag-handle:hover::after, .drag-handle:active::after { background-color: #3b82f6; opacity: 1; }
 
         @media (min-width: 768px) {
-            .drag-handle { width: 16px; cursor: col-resize; height: 100%; }
+            .drag-handle { width: 16px; cursor: col-resize; height: auto; min-height: 100%; }
             .drag-handle::after { width: 4px; height: 40px; }
         }
         @media (max-width: 767px) {
@@ -143,10 +145,10 @@
         .rumble-green { color: #85c742; }
     </style>
 </head>
-<body class="flex h-screen w-screen overflow-hidden">
+<body class="flex min-h-screen w-full relative">
 
-    <!-- SIDEBAR -->
-    <aside class="w-14 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4 z-50 shadow-xl flex-none">
+    <!-- SIDEBAR (Sticky) -->
+    <aside class="sticky top-0 h-screen w-14 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4 z-50 shadow-xl flex-none">
         
         <!-- Toggle Buttons Container -->
         <div class="flex flex-col space-y-4 mb-auto pt-2">
@@ -192,10 +194,11 @@
     </aside>
 
     <!-- MAIN CONTENT AREA -->
-    <div id="split-container" class="flex-grow flex flex-col md:flex-row relative h-full w-full bg-slate-900">
+    <div id="split-container" class="flex-grow flex flex-col md:flex-row relative min-h-screen">
         
-        <!-- LEFT COLUMN (Sortable, Auto Scroll) -->
-        <div id="panel-left-col" class="sortable-list flex-none relative flex flex-col min-h-0 overflow-y-auto overflow-x-hidden p-2" style="flex-basis: 50%;">
+        <!-- LEFT COLUMN (Sortable, Expandable) -->
+        <!-- Removed overflow-hidden so page can scroll -->
+        <div id="panel-left-col" class="sortable-list flex-none relative flex flex-col min-h-0 p-2" style="flex-basis: 50%;">
             
             <!-- WIDGET 1: Streamlabs Chat -->
             <div class="widget-wrapper" id="widget-sl-chat">
@@ -209,7 +212,7 @@
                         <span class="text-xs uppercase tracking-wider text-gray-400 font-bold">Streamlabs Chat</span>
                         <div class="w-8"></div> 
                     </div>
-                    <!-- Flex-1 allows internal scrolling, min-h-0 prevents overflow loop -->
+                    <!-- Flex-1 allows internal scrolling -->
                     <iframe class="w-full flex-1 min-h-0 border-none bg-transparent block" 
                         src="https://streamlabs.com/widgets/chat-box/v1/531DB2F8C796CD20F99026269AF1361799D802B943629AE4B1565C032AE31FD5EAA2198BBA334F4F3BB8141FD428224DFB542460B5F61224B785033305179A60E08707F74F595515155C453D44A4FA3CACFB99D1DE79A16FA35A3C85C8AFE29D35EA7D656E61F8A026D9BF6F99FF99FA0ACFF6F7C8776E76AC6B4C07F8">
                     </iframe>
@@ -241,8 +244,8 @@
         <!-- SPLITTER (Columns) -->
         <div id="drag-handle" class="drag-handle"></div>
 
-        <!-- RIGHT COLUMN (Sortable, Auto Scroll) -->
-        <div id="panel-right-col" class="sortable-list flex-1 min-h-0 min-w-0 flex flex-col overflow-y-auto overflow-x-hidden p-2">
+        <!-- RIGHT COLUMN (Sortable, Expandable) -->
+        <div id="panel-right-col" class="sortable-list flex-1 min-h-0 min-w-0 flex flex-col p-2">
             
             <!-- WIDGET 3: TikTok -->
             <div class="widget-wrapper" id="widget-tiktok">
