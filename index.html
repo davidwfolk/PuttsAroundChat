@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Streamlabs, TikTok & Rumble Chat Manager</title>
+    <!-- Tailwind CSS for layout -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- jQuery -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
+    <!-- SortableJS for Drag and Drop -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+
+    <style>
+        body {
+            background-color: #0f172a; /* Slate-900 */
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden; /* Prevent full page scroll */
+        }
+
+        /* Scrollbar Styling for internal elements */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+        /* Widget Container (The wrapper around each modal) */
+        .widget-wrapper {
+            flex: 1; /* Default: Auto-grow */
+            min-height: 100px; /* Minimum size prevention */
+            padding: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            transition: none;
+        }
+        
+        /* Utility to hide elements explicitly */
+        .hidden { display: none !important; }
+
+        /* Modal/Window Styles */
+        .modal-window {
+            position: relative; /* Context for absolute resize handle */
+            background-color: #1f2937; /* Gray-800 */
+            border: 1px solid #374151; /* Gray-700 */
+            border-radius: 0.75rem; /* rounded-xl */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        /* RESIZE HANDLE STYLES */
+        .resize-handle-y {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 14px; /* Large hit area */
+            background: transparent;
+            cursor: row-resize;
+            z-index: 50;
+            transition: background 0.2s;
+            transform: translateY(50%); /* Center over the gap */
+        }
+        .resize-handle-y:hover, .resize-handle-y.active {
+            background: rgba(59, 130, 246, 0.5); /* Blue hint on hover/drag */
+        }
+
+        .window-header {
+            background-color: #111827; /* Gray-900 */
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid #374151;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex: none; /* Don't shrink */
+            cursor: grab; /* Indicate draggable */
+            user-select: none;
+        }
+        .window-header:active { cursor: grabbing; }
+
+        .window-controls { display: flex; gap: 6px; }
+        .control-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .dot-red { background-color: #ef4444; }
+        .dot-yellow { background-color: #f59e0b; }
+        .dot-green { background-color: #10b981; }
+
+        /* Dragging Visuals */
+        .sortable-ghost { opacity: 0.4; background-color: #374151; border: 2px dashed #4b5563; }
+        .sortable-drag { cursor: grabbing; opacity: 1; background-color: #1f2937; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); transform: scale(1.02); }
+
+        /* TikTok Event Styling */
+        .event, .static, .gifted {
+            margin-bottom: 8px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255,255,255,0.05);
+            animation: fadeIn 0.3s ease-out;
+            word-wrap: break-word;
+            font-size: 0.9rem;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .usernamelink { color: #fe2c55; font-weight: bold; text-decoration: none; margin-right: 5px; }
+        .usernamelink:hover { text-decoration: underline; }
+        .miniprofilepicture { width: 24px; height: 24px; border-radius: 50%; vertical-align: middle; margin-right: 6px; }
+        .gifticon { width: 40px; height: 40px; margin-right: 10px; }
+
+        .event.liked { border-left: 3px solid #447dd4; }
+        .event.follow { border-left: 3px solid #ff005e; }
+        .event.shared { border-left: 3px solid #2fb816; }
+        .gifted { border-left: 3px solid #e6b800; display: flex; align-items: center; }
+        .gifted .message { display: flex; align-items: center; }
+        .gifted .text { display: flex; flex-direction: column; }
+        .icon { display: inline-block; margin-right: 8px; vertical-align: middle; }
+
+        /* --- LAYOUT & SPLITTER STYLES --- */
+        .drag-handle {
+            flex: none; z-index: 30; display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+        }
+        .drag-handle::after {
+            content: ''; background-color: #4b5563; border-radius: 999px; opacity: 0.5; transition: all 0.2s;
+        }
+        .drag-handle:hover::after, .drag-handle:active::after { background-color: #3b82f6; opacity: 1; }
+
+        @media (min-width: 768px) {
+            .drag-handle { width: 16px; cursor: col-resize; height: 100%; }
+            .drag-handle::after { width: 4px; height: 40px; }
+        }
+        @media (max-width: 767px) {
+            .drag-handle { height: 16px; cursor: row-resize; width: 100%; }
+            .drag-handle::after { width: 40px; height: 4px; }
+        }
+
+        .btn-active { border-color: #60a5fa !important; background-color: #1f2937 !important; }
+        
+        /* Rumble styling helper */
+        .rumble-green { color: #85c742; }
+    </style>
+</head>
+<body class="flex h-screen w-screen overflow-hidden">
+
+    <!-- SIDEBAR -->
+    <aside class="w-14 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4 z-50 shadow-xl flex-none">
+        
+        <!-- Toggle Buttons Container -->
+        <div class="flex flex-col space-y-4 mb-auto pt-2">
+            
+            <!-- Toggle: Streamlabs Chat -->
+            <button id="toggleChatBtn" class="group relative flex items-center justify-center w-10 h-10 rounded-lg bg-gray-800 text-blue-400 border border-gray-700 hover:bg-gray-700 transition-all shadow-md btn-active" title="Toggle Streamlabs Chat">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+            </button>
+
+            <!-- Toggle: Streamlabs Events -->
+            <button id="toggleEventsBtn" class="group relative flex items-center justify-center w-10 h-10 rounded-lg bg-gray-800 text-yellow-400 border border-gray-700 hover:bg-gray-700 transition-all shadow-md btn-active" title="Toggle Events">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+            </button>
+
+            <!-- Toggle: TikTok -->
+            <button id="toggleTikTokBtn" class="group relative flex items-center justify-center w-10 h-10 rounded-lg bg-gray-800 text-pink-500 border border-gray-700 hover:bg-gray-700 transition-all shadow-md btn-active" title="Toggle TikTok">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                </svg>
+            </button>
+
+            <!-- Toggle: Rumble -->
+            <button id="toggleRumbleBtn" class="group relative flex items-center justify-center w-10 h-10 rounded-lg bg-gray-800 text-green-400 border border-gray-700 hover:bg-gray-700 transition-all shadow-md btn-active" title="Toggle Rumble">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </button>
+
+        </div>
+
+        <!-- Connection Dot -->
+        <div class="mt-auto flex flex-col items-center space-y-2">
+            <div class="p-1 rounded-full bg-gray-800 border border-gray-700">
+                <div id="statusDot" class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" title="Disconnected"></div>
+            </div>
+            <div class="text-[8px] text-gray-500 font-bold">LIVE</div>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT AREA -->
+    <div id="split-container" class="flex-grow flex flex-col md:flex-row relative h-full w-full bg-slate-900">
+        
+        <!-- LEFT COLUMN (Sortable, Auto Scroll) -->
+        <div id="panel-left-col" class="sortable-list flex-none relative flex flex-col min-h-0 overflow-y-auto overflow-x-hidden p-2" style="flex-basis: 50%;">
+            
+            <!-- WIDGET 1: Streamlabs Chat -->
+            <div class="widget-wrapper" id="widget-sl-chat">
+                <div class="modal-window">
+                    <div class="window-header">
+                        <div class="window-controls">
+                            <div class="control-dot dot-red"></div>
+                            <div class="control-dot dot-yellow"></div>
+                            <div class="control-dot dot-green"></div>
+                        </div>
+                        <span class="text-xs uppercase tracking-wider text-gray-400 font-bold">Streamlabs Chat</span>
+                        <div class="w-8"></div> 
+                    </div>
+                    <!-- Flex-1 allows internal scrolling, min-h-0 prevents overflow loop -->
+                    <iframe class="w-full flex-1 min-h-0 border-none bg-transparent block" 
+                        src="https://streamlabs.com/widgets/chat-box/v1/531DB2F8C796CD20F99026269AF1361799D802B943629AE4B1565C032AE31FD5EAA2198BBA334F4F3BB8141FD428224DFB542460B5F61224B785033305179A60E08707F74F595515155C453D44A4FA3CACFB99D1DE79A16FA35A3C85C8AFE29D35EA7D656E61F8A026D9BF6F99FF99FA0ACFF6F7C8776E76AC6B4C07F8">
+                    </iframe>
+                    <div class="resize-handle-y"></div>
+                </div>
+            </div>
+
+            <!-- WIDGET 2: Streamlabs Events -->
+            <div class="widget-wrapper" id="widget-sl-events">
+                <div class="modal-window">
+                    <div class="window-header">
+                        <div class="window-controls">
+                            <div class="control-dot dot-red"></div>
+                            <div class="control-dot dot-yellow"></div>
+                            <div class="control-dot dot-green"></div>
+                        </div>
+                        <span class="text-xs uppercase tracking-wider text-gray-400 font-bold">Event List</span>
+                        <div class="w-8"></div>
+                    </div>
+                    <iframe class="w-full flex-1 min-h-0 border-none bg-transparent block" 
+                        src="https://streamlabs.com/widgets/event-list/v1/531DB2F8C796CD20F99026269AF1361799D802B943629AE4B1565C032AE31FD5EAA2198BBA334F4F3BB8141FD428224DFB542460B5F61224B785033305179A60E08707F74F595515155C453D44A4FA3CACFB99D1DE79A16FA35A3C85C8AFE29D35EA7D656E61F8A026D9BF6F99FF99FA0ACFF6F7C8776E76AC6B4C07F8">
+                    </iframe>
+                    <div class="resize-handle-y"></div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- SPLITTER (Columns) -->
+        <div id="drag-handle" class="drag-handle"></div>
+
+        <!-- RIGHT COLUMN (Sortable, Auto Scroll) -->
+        <div id="panel-right-col" class="sortable-list flex-1 min-h-0 min-w-0 flex flex-col overflow-y-auto overflow-x-hidden p-2">
+            
+            <!-- WIDGET 3: TikTok -->
+            <div class="widget-wrapper" id="widget-tiktok">
+                <div class="modal-window">
+                    <div class="window-header z-10">
+                        <div class="flex items-center space-x-3">
+                             <div class="window-controls">
+                                <div class="control-dot dot-red"></div>
+                                <div class="control-dot dot-yellow"></div>
+                                <div class="control-dot dot-green"></div>
+                            </div>
+                            <span class="text-xs uppercase tracking-widest text-gray-400 font-bold">TikTok Live</span>
+                        </div>
+                        <div id="roomStats" class="flex space-x-2 text-[10px] font-mono text-gray-300">
+                            <span>Waiting...</span>
+                        </div>
+                        <div class="hidden">
+                            <input type="text" id="uniqueIdInput" value="puttsaround">
+                            <button id="connectButton">Connect</button>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-800/50 px-3 py-1 border-b border-gray-700 flex justify-between items-center text-[10px]">
+                        <span id="stateText" class="text-yellow-500 font-mono">Connecting...</span>
+                    </div>
+
+                    <div class="flex-grow overflow-hidden relative flex flex-col bg-gray-900/30">
+                        <div class="giftcontainer w-full p-2 overflow-y-auto max-h-[30%] border-b border-gray-700/50 bg-black/10"></div>
+                        <div class="eventcontainer flex-grow p-4 overflow-y-auto"></div>
+                    </div>
+                    <div class="resize-handle-y"></div>
+                </div>
+            </div>
+
+            <!-- WIDGET 4: Rumble -->
+            <div class="widget-wrapper" id="widget-rumble">
+                <div class="modal-window">
+                    <div class="window-header z-10">
+                        <div class="flex items-center space-x-3">
+                             <div class="window-controls">
+                                <div class="control-dot dot-red"></div>
+                                <div class="control-dot dot-yellow"></div>
+                                <div class="control-dot dot-green"></div>
+                            </div>
+                            <span class="text-xs uppercase tracking-widest text-gray-400 font-bold">Rumble Chat</span>
+                        </div>
+                    </div>
+
+                    <iframe id="rumbleFrame" class="w-full flex-1 min-h-0 border-none bg-transparent block" src="about:blank"></iframe>
+                    <div class="resize-handle-y"></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- 1. CONFIGURATION ---
+        window.settings = {
+            username: "puttsaround",
+            showLikes: "1",
+            showJoins: "1",
+            showChats: "1",
+            showGifts: "1",
+            showFollows: "1"
+        };
+
+        // --- 2. TOGGLE WIDGET LOGIC ---
+        // Button Listeners
+        document.getElementById('toggleChatBtn').addEventListener('click', () => toggleWidget('toggleChatBtn', 'widget-sl-chat'));
+        document.getElementById('toggleEventsBtn').addEventListener('click', () => toggleWidget('toggleEventsBtn', 'widget-sl-events'));
+        document.getElementById('toggleTikTokBtn').addEventListener('click', () => toggleWidget('toggleTikTokBtn', 'widget-tiktok'));
+        document.getElementById('toggleRumbleBtn').addEventListener('click', () => toggleWidget('toggleRumbleBtn', 'widget-rumble'));
+
+        function toggleWidget(btnId, widgetId) {
+            const btn = document.getElementById(btnId);
+            const widget = document.getElementById(widgetId);
+            
+            // Toggle Visibility
+            const isHidden = widget.classList.toggle('hidden');
+            
+            // Update Button Visuals
+            if (isHidden) {
+                btn.classList.add('opacity-40', 'grayscale');
+                btn.classList.remove('btn-active');
+            } else {
+                btn.classList.remove('opacity-40', 'grayscale');
+                btn.classList.add('btn-active');
+            }
+            
+            updateColumnVisibility();
+        }
+
+        // --- 3. RUMBLE LOGIC ---
+        const rumbleFrame = document.getElementById('rumbleFrame');
+        
+        // Your specific default URL
+        const defaultRumbleUrl = "https://studio.rumble.com/studio/passthrough/c6c67b4b-bb23-44f8-9e39-c47f1f0ebdd7/chat";
+
+        // Apply URL to iframe
+        rumbleFrame.src = defaultRumbleUrl;
+
+        // Smart Column Logic: Auto-expand/hide columns based on widget visibility
+        function updateColumnVisibility() {
+            const leftCol = document.getElementById('panel-left-col');
+            const rightCol = document.getElementById('panel-right-col');
+            const splitter = document.getElementById('drag-handle');
+            
+            // Check if any children in columns are NOT hidden
+            const leftVisible = Array.from(leftCol.children).some(el => el.classList.contains('widget-wrapper') && !el.classList.contains('hidden'));
+            const rightVisible = Array.from(rightCol.children).some(el => el.classList.contains('widget-wrapper') && !el.classList.contains('hidden'));
+            
+            // Logic table
+            if (leftVisible && rightVisible) {
+                // Both Active: Show Split Mode
+                leftCol.classList.remove('hidden');
+                rightCol.classList.remove('hidden');
+                splitter.classList.remove('hidden');
+                leftCol.style.flexBasis = '50%'; // Reset to default split (or current resized value)
+            } else if (leftVisible && !rightVisible) {
+                // Left Only: Full Width
+                leftCol.classList.remove('hidden');
+                rightCol.classList.add('hidden');
+                splitter.classList.add('hidden');
+                leftCol.style.flexBasis = '100%'; 
+            } else if (!leftVisible && rightVisible) {
+                // Right Only: Full Width
+                leftCol.classList.add('hidden');
+                rightCol.classList.remove('hidden');
+                splitter.classList.add('hidden');
+            } else {
+                // All Hidden
+                leftCol.classList.add('hidden');
+                rightCol.classList.add('hidden');
+                splitter.classList.add('hidden');
+            }
+        }
+
+        // --- 4. LAYOUT & DRAG LOGIC ---
+        const splitContainer = document.getElementById('split-container');
+        const dragHandle = document.getElementById('drag-handle');
+        const leftPanel = document.getElementById('panel-left-col');
+        const rightPanel = document.getElementById('panel-right-col');
+        const iframes = document.querySelectorAll('iframe');
+        
+        let isDraggingSplitter = false;
+
+        // Init SortableJS for window swapping
+        new Sortable(leftPanel, {
+            group: 'shared', 
+            animation: 150,
+            handle: '.window-header', 
+            ghostClass: 'sortable-ghost',
+            dragClass: 'sortable-drag',
+            onEnd: updateColumnVisibility 
+        });
+
+        new Sortable(rightPanel, {
+            group: 'shared',
+            animation: 150,
+            handle: '.window-header',
+            ghostClass: 'sortable-ghost',
+            dragClass: 'sortable-drag',
+            onEnd: updateColumnVisibility
+        });
+
+        // --- 5. COLUMN SPLITTER LOGIC ---
+        dragHandle.addEventListener('mousedown', startSplitterDrag);
+        dragHandle.addEventListener('touchstart', startSplitterDrag);
+
+        window.addEventListener('mouseup', stopAllDrag);
+        window.addEventListener('touchend', stopAllDrag);
+        
+        window.addEventListener('mousemove', (e) => {
+            if (isDraggingSplitter) dragSplitterMove(e.clientX, e.clientY);
+            if (activeWidgetResize) dragWidgetResize(e.clientY);
+        });
+
+        window.addEventListener('touchmove', (e) => {
+            if (isDraggingSplitter || activeWidgetResize) e.preventDefault();
+            if (isDraggingSplitter) dragSplitterMove(e.touches[0].clientX, e.touches[0].clientY);
+            if (activeWidgetResize) dragWidgetResize(e.touches[0].clientY);
+        }, { passive: false });
+
+        function startSplitterDrag(e) {
+            isDraggingSplitter = true;
+            iframes.forEach(el => el.style.pointerEvents = 'none'); 
+            document.body.style.cursor = isMobile() ? 'row-resize' : 'col-resize';
+            dragHandle.style.opacity = '1';
+        }
+
+        function dragSplitterMove(x, y) {
+            const containerRect = splitContainer.getBoundingClientRect();
+            let percentage;
+            if (isMobile()) {
+                let relativeY = y - containerRect.top;
+                percentage = (relativeY / containerRect.height) * 100;
+            } else {
+                let relativeX = x - containerRect.left;
+                percentage = (relativeX / containerRect.width) * 100;
+            }
+            percentage = Math.max(15, Math.min(85, percentage));
+            leftPanel.style.flexBasis = `${percentage}%`;
+        }
+
+        function isMobile() {
+            return window.innerWidth < 768;
+        }
+
+        // --- 6. WIDGET VERTICAL RESIZE LOGIC (PUSH MODE) ---
+        let activeWidgetResize = null;
+        let startY = 0;
+        let startHeight = 0;
+
+        document.querySelectorAll('.resize-handle-y').forEach(handle => {
+            handle.addEventListener('mousedown', (e) => startWidgetResize(e, handle));
+            handle.addEventListener('touchstart', (e) => startWidgetResize(e.touches[0], handle));
+        });
+
+        function startWidgetResize(e, handle) {
+            // Find parent .widget-wrapper
+            const wrapper = handle.closest('.modal-window').parentElement;
+            const column = wrapper.parentElement; // Get the column container
+            
+            activeWidgetResize = wrapper;
+            startY = e.clientY || e.touches[0].clientY;
+            startHeight = wrapper.offsetHeight;
+            
+            // LOCK ALL widgets in this column to their current pixel height.
+            const siblings = column.querySelectorAll('.widget-wrapper');
+            siblings.forEach(sib => {
+                sib.style.height = `${sib.offsetHeight}px`;
+                sib.style.flex = 'none';
+            });
+            
+            iframes.forEach(el => el.style.pointerEvents = 'none');
+            document.body.style.cursor = 'row-resize';
+            handle.classList.add('active');
+        }
+
+        function dragWidgetResize(y) {
+            if (!activeWidgetResize) return;
+            
+            const delta = y - startY;
+            const newHeight = Math.max(100, startHeight + delta); // Min 100px
+            
+            // Resize ONLY the active widget. This pushes siblings down naturally.
+            activeWidgetResize.style.height = `${newHeight}px`;
+        }
+
+        function stopAllDrag() {
+            if (isDraggingSplitter || activeWidgetResize) {
+                isDraggingSplitter = false;
+                iframes.forEach(el => el.style.pointerEvents = 'auto');
+                document.body.style.cursor = 'default';
+                dragHandle.style.opacity = '';
+                
+                if (activeWidgetResize) {
+                     document.querySelectorAll('.resize-handle-y').forEach(h => h.classList.remove('active'));
+                     activeWidgetResize = null;
+                }
+            }
+        }
+
+
+        // --- 7. TIKTOK CONNECTION ---
+        class TikTokIOConnection {
+            constructor(backendUrl) {
+                this.socket = io(backendUrl);
+                this.uniqueId = null;
+                this.options = null;
+
+                this.socket.on('connect', () => {
+                    console.info("Socket connected!");
+                    if (this.uniqueId) this.setUniqueId();
+                })
+
+                this.socket.on('disconnect', () => { console.warn("Socket disconnected!"); })
+                this.socket.on('streamEnd', () => { console.warn("LIVE has ended!"); this.uniqueId = null; })
+                this.socket.on('tiktokDisconnected', (errMsg) => {
+                    console.warn(errMsg);
+                    if (errMsg && errMsg.includes('LIVE has ended')) this.uniqueId = null;
+                });
+            }
+
+            connect(uniqueId, options) {
+                this.uniqueId = uniqueId;
+                this.options = options || {};
+                this.setUniqueId();
+                return new Promise((resolve, reject) => {
+                    this.socket.once('tiktokConnected', resolve);
+                    this.socket.once('tiktokDisconnected', reject);
+                    setTimeout(() => { reject('Connection Timeout'); }, 15000)
+                })
+            }
+            setUniqueId() { this.socket.emit('setUniqueId', this.uniqueId, this.options); }
+            on(eventName, eventHandler) { this.socket.on(eventName, eventHandler); }
+        }
+
+        let connection = new TikTokIOConnection("https://tiktok-chat-reader.zerody.one/");
+        let viewerCount = 0;
+        let likeCount = 0;
+        let diamondsCount = 0;
+        let messageType;
+
+        $(document).ready(() => {
+            $('#connectButton').click(connect);
+            if (window.settings.username) connect();
+        })
+
+        function connect() {
+            let uniqueId = window.settings.username || $('#uniqueIdInput').val();
+            if (uniqueId !== '') {
+                $('#stateText').text('Connecting...').removeClass('text-red-500 text-yellow-500').addClass('text-blue-400');
+                $('#statusDot').removeClass('bg-green-500 bg-red-500').addClass('bg-yellow-500'); // Connecting yellow
+
+                connection.connect(uniqueId, { enableExtendedGiftInfo: true }).then(state => {
+                    $('#stateText').text(`Connected [${state.roomId}]`).removeClass('text-blue-400 text-yellow-500').addClass('text-green-400');
+                    $('#statusDot').removeClass('bg-yellow-500 animate-pulse').addClass('bg-green-500'); // Connected Green
+                    viewerCount = 0; likeCount = 0; diamondsCount = 0;
+                    updateRoomStats();
+                }).catch(errorMessage => {
+                    $('#stateText').text('Error: ' + errorMessage).removeClass('text-blue-400').addClass('text-red-500');
+                    $('#statusDot').removeClass('bg-yellow-500').addClass('bg-red-500 animate-pulse'); // Error Red
+                    if (window.settings.username) setTimeout(connect, 30000);
+                })
+            }
+        }
+
+        function sanitize(text) { return text ? text.replace(/</g, '&lt;') : ""; }
+        function updateRoomStats() {
+            $('#roomStats').html(`
+                <span class="bg-gray-800 border border-gray-600 px-1.5 py-0.5 rounded">👁️ ${viewerCount.toLocaleString()}</span> 
+                <span class="bg-gray-800 border border-gray-600 px-1.5 py-0.5 rounded">❤️ ${likeCount.toLocaleString()}</span> 
+                <span class="bg-gray-800 border border-gray-600 px-1.5 py-0.5 rounded">💎 ${diamondsCount.toLocaleString()}</span>
+            `);
+        }
+        function generateUsernameLink(data) { return `<a class="usernamelink" href="https://www.tiktok.com/@${data.uniqueId}" target="_blank">${data.uniqueId}</a>`; }
+        function isPendingStreak(data) { return data.giftType === 1 && !data.repeatEnd; }
+
+        function addChatItem(color, data, text, summarize) {
+            let container = $('.eventcontainer');
+            if (container.find('div').length > 500) container.find('div').slice(0, 200).remove();
+            container.find('.temporary').remove();
+
+            if (messageType === 'liked') {
+                $('.event.liked').remove();
+                container.append(`<div class='event liked'><div class='icon text-blue-400'>👍</div>${generateUsernameLink(data)}<span class="text-gray-300 ml-1 text-sm">${sanitize(text)}</span></div>`);
+            } else if (messageType === 'follow') {
+                $('.event .message').each(function () { if (data.uniqueId + sanitize(text) === $(this).text()) $(this).parent('.event').remove(); })
+                container.append(`<div class='event follow'><div class='icon text-pink-500'>➕</div>${generateUsernameLink(data)}<span class="text-gray-300 ml-1 text-sm">${sanitize(text)}</span></div>`);
+            } else if (messageType === 'shared') {
+                container.append(`<div class='event shared'><div class='icon text-green-500'>↗️</div>${generateUsernameLink(data)}<span class="text-gray-300 ml-1 text-sm">${sanitize(text)}</span></div>`);
+            } else if (messageType === 'chat' || messageType === 'joined') {
+                $('.message').each(function () { if (sanitize(text) === $(this).text()) $(this).parent('.static').remove(); })
+                container.append(`<div class="${summarize ? 'temporary' : 'static'}"><span class="user"><img class="miniprofilepicture" src="${data.profilePictureUrl}" /> ${generateUsernameLink(data)}</span><div class="message mt-1 text-white">${sanitize(text)}</div></div>`);
+            }
+            container.stop().animate({ scrollTop: container[0].scrollHeight }, 200);
+        }
+
+        function addGiftItem(data) {
+            let container = $('.giftcontainer');
+            if (container.find('div').length > 200) container.find('div').slice(0, 100).remove();
+            let streakId = data.userId.toString() + '_' + data.giftId;
+            let html = `
+                <div class="gifted" data-streakid="${isPendingStreak(data) ? streakId : ''}" data-id="${data.giftId}">
+                    <img class="miniprofilepicture" src="${data.profilePictureUrl}" /> 
+                    <div class="message flex-grow">
+                        <div class="image"><img class="gifticon" src="${data.giftPictureUrl}"/></div>
+                        <div class="text text-sm">
+                            <span class="text-yellow-400 font-bold">${generateUsernameLink(data)} sent ${data.giftName}</span>
+                            <span class="text-xs text-gray-400">Streak: <b style="${isPendingStreak(data) ? 'color:red' : ''}">x${data.repeatCount.toLocaleString()}</b></span>
+                            <span class="text-xs text-gray-500">Value: ${(data.diamondCount * data.repeatCount).toLocaleString()} 💎</span>
+                        </div>
+                    </div>
+                </div>`;
+            let existingStreakItem = container.find(`[data-streakid='${streakId}']`);
+            if (existingStreakItem.length) existingStreakItem.replaceWith(html);
+            else container.append(html);
+            container.stop().animate({ scrollTop: container[0].scrollHeight }, 800);
+        }
+
+        connection.on('roomUser', (msg) => { if (typeof msg.viewerCount === 'number') { viewerCount = msg.viewerCount; updateRoomStats(); } });
+        connection.on('like', (msg) => {
+            if (typeof msg.totalLikeCount === 'number') { likeCount = msg.totalLikeCount; updateRoomStats(); }
+            messageType = 'liked';
+            if (window.settings.showLikes !== "0" && typeof msg.likeCount === 'number') addChatItem('#447dd4', msg, msg.label.replace('{0:user}', '').replace('likes', `${msg.likeCount} likes`));
+        });
+        let joinMsgDelay = 0;
+        connection.on('member', (msg) => {
+            if (window.settings.showJoins === "0") return;
+            let addDelay = 250;
+            if (joinMsgDelay > 500) addDelay = 100;
+            if (joinMsgDelay > 1000) addDelay = 0;
+            joinMsgDelay += addDelay;
+            messageType = 'joined';
+            setTimeout(() => { joinMsgDelay -= addDelay; addChatItem('#21b2c2', msg, 'joined', true); }, joinMsgDelay);
+        });
+        connection.on('chat', (msg) => { if (window.settings.showChats !== "0") { messageType = 'chat'; addChatItem('', msg, msg.comment); } });
+        connection.on('gift', (data) => {
+            if (!isPendingStreak(data) && data.diamondCount > 0) { diamondsCount += (data.diamondCount * data.repeatCount); updateRoomStats(); }
+            if (window.settings.showGifts !== "0") { $('.gifted[data-id=' + data.giftId + ']').remove(); addGiftItem(data); }
+        });
+        connection.on('social', (data) => {
+            if (window.settings.showFollows === "0") return;
+            let color = data.displayType.includes('follow') ? '#ff005e' : '#2fb816';
+            messageType = data.displayType.includes('follow') ? 'follow' : 'shared';
+            addChatItem(color, data, data.label.replace('{0:user}', ''));
+        });
+        connection.on('streamEnd', () => {
+            $('#stateText').text('Stream ended.');
+            if (window.settings.username) setTimeout(connect, 30000);
+        });
+    </script>
+</body>
+</html>
