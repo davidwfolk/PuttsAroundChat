@@ -213,7 +213,10 @@
                         <div class="w-8"></div> 
                     </div>
                     <!-- Flex-1 allows internal scrolling -->
-                    <iframe class="w-full flex-1 min-h-0 border-none bg-transparent block" 
+                    <iframe id="sl-chat-frame" class="w-full flex-1 min-h-0 border-none bg-transparent block" src="about:blank"></iframe>
+
+
+                    <iframe  
                         src="https://rb.gy/1t215t">
                     </iframe>
                     <div class="resize-handle-y"></div>
@@ -232,8 +235,7 @@
                         <span class="text-xs uppercase tracking-wider text-gray-400 font-bold">Event List</span>
                         <div class="w-8"></div>
                     </div>
-                    <iframe class="w-full flex-1 min-h-0 border-none bg-transparent block" 
-                        src="https://streamlabs.com/widgets/event-list/v1/531DB2F8C796CD20F99026269AF1361799D802B943629AE4B1565C032AE31FD5EAA2198BBA334F4F3BB8141FD428224DFB542460B5F61224B785033305179A60E08707F74F595515155C453D44A4FA3CACFB99D1DE79A16FA35A3C85C8AFE29D35EA7D656E61F8A026D9BF6F99FF99FA0ACFF6F7C8776E76AC6B4C07F8">
+                    <iframe id="sl-event-frame" class="w-full flex-1 min-h-0 border-none bg-transparent block" src="about:blank">
                     </iframe>
                     <div class="resize-handle-y"></div>
                 </div>
@@ -339,6 +341,19 @@
             updateColumnVisibility();
         }
 
+        // --- FORCE LOAD STREAMLABS WIDGETS ---
+// Paste your LONG URLs inside these quotes. Ensure no spaces!
+const chatBoxUrl = "https://streamlabs.com/widgets/chat-box/v1/531DB2F8C796CD20F99026269AF1361799D802B943629AE4B1565C032AE31FD5EAA2198BBA334F4F3BB8141FD428224DFB542460B5F61224B785033305179A60E08707F74F595515155C453D44A4FA3CACFB99D1DE79A16FA35A3C85C8AFE29D35EA7D656E61F8A026D9BF6F99FF99FA0ACFF6F7C8776E76AC6B4C07F8";
+
+// NOTE: You are currently using the SAME token for both. 
+// Usually, the "Event List" has a DIFFERENT token than the "Chat Box".
+// Go to Streamlabs -> Event List -> Copy that specific URL for this second variable.
+const eventListUrl = "https://streamlabs.com/widgets/event-list/v1/531DB2F8C796CD20F99026269AF1361799D802B943629AE4B1565C032AE31FD5EAA2198BBA334F4F3BB8141FD428224DFB542460B5F61224B785033305179A60E08707F74F595515155C453D44A4FA3CACFB99D1DE79A16FA35A3C85C8AFE29D35EA7D656E61F8A026D9BF6F99FF99FA0ACFF6F7C8776E76AC6B4C07F8";
+
+// Inject the URLs safely
+document.getElementById('sl-chat-frame').src = chatBoxUrl;
+document.getElementById('sl-event-frame').src = eventListUrl;
+        
         // --- 3. RUMBLE LOGIC ---
         const rumbleFrame = document.getElementById('rumbleFrame');
         
